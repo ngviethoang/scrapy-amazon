@@ -10,7 +10,7 @@ from datetime import datetime
 import json
 import random
 from scrapy.downloadermiddlewares.retry import RetryMiddleware
-from urllib.parse import urlencode
+from urllib import urlencode
 from w3lib.http import basic_auth_header
 import requests
 
@@ -113,7 +113,12 @@ class CustomDownloaderMiddleware(RetryMiddleware):
     def get_first_request(self, request):
         first_req = request.meta['first_req']
 
-        meta = {'cookiejar': request.meta['cookiejar']}
+        meta = dict()
+
+        if 'data' in first_req.meta:
+            meta['data'] = first_req.meta['data']
+
+        meta['cookiejar'] = request.meta['cookiejar']
 
         if 'url' in request.meta:
             meta['url'] = request.meta['url']
@@ -132,7 +137,7 @@ class ProxyDownloaderMiddleware(object):
     @classmethod
     def from_crawler(cls, crawler):
         # Get proxies from api
-        proxies_number = 200
+        proxies_number = 100
 
         res = requests.get(url='http://localhost:5000/proxies?limit={}'.format(proxies_number))
         proxies = json.loads(res.content)

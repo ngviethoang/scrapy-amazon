@@ -6,6 +6,7 @@
 # See: http://doc.scrapy.org/en/latest/topics/item-pipeline.html
 import pymongo
 from scrapy.exceptions import DropItem
+from datetime import datetime
 
 
 class FilterPipeline(object):
@@ -21,11 +22,12 @@ class FilterPipeline(object):
         else:
             id = item[key_id]
 
-        if id is None or id in self.ids_seen:
-            raise DropItem("Duplicate item found: %s" % item)
-        else:
-            self.ids_seen.add(id)
-            return item
+        if 'update_variant' not in item:
+            if id is None or id in self.ids_seen:
+                raise DropItem("Duplicate item found: %s" % item)
+
+        self.ids_seen.add(id)
+        return item
 
 
 class MongoItemsPipeline(object):
@@ -51,10 +53,33 @@ class MongoItemsPipeline(object):
         self.client.close()
 
     def process_item(self, item, spider):
-        if item['mongo_collection']:
+        if 'mongo_collection' in item:
             self.mongo_collection = item['mongo_collection']
             del item['mongo_collection']
 
-        self.db[self.mongo_collection].insert_one(dict(item))
+        if 'created_at' not in item:
+            item['created_at'] = datetime.now()
 
-        return item
+        item['updated_at'] = datetime.now()
+
+        # Update variant for existed item
+        if 'update_variant' in item:
+            del item['update_variant']
+            del item['brand']
+            del item['categories']
+
+            parent_id = item['parent_id']
+            del item['parent_id']
+
+            self.db[self.mongo_collection].update_one(filter={'ASIN': parent_id},
+                                                      update={'$push': {'variants': item}})
+
+            raise DropItem('Update variant {}'.format(item))
+
+        # Create new item
+        else:
+            print('insert item {}'.format(item))
+
+            self.db[self.mongo_collection].insert_one(dict(item))
+
+            return item

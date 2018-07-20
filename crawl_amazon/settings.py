@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Scrapy settings for test_amazon project
+# Scrapy settings for crawl_amazon project
 #
 # For simplicity, this file contains only settings considered important or
 # commonly used. You can find more settings consulting the documentation:
@@ -17,7 +17,7 @@ NEWSPIDER_MODULE = 'crawl_amazon.spiders'
 DOWNLOAD_TIMEOUT = 10
 
 RETRY_TIMES = 50
-RETRY_HTTP_CODES = [111, 300, 302, 403, 400, 404, 500, 502, 503, 504, 408]
+RETRY_HTTP_CODES = [111, 403, 400, 404, 500, 502, 503, 504, 408]
 
 LOG_STDOUT = True
 # LOG_FILE = 'logs/crawl.log'
@@ -60,15 +60,15 @@ COOKIES_ENABLED = True
 # Enable or disable spider middlewares
 # See http://scrapy.readthedocs.org/en/latest/topics/spider-middleware.html
 #SPIDER_MIDDLEWARES = {
-#    'test_amazon.middlewares.TestAmazonSpiderMiddleware': 543,
+#    'crawl_amazon.middlewares.TestAmazonSpiderMiddleware': 543,
 #}
 
 # Enable or disable downloader middlewares
 # See http://scrapy.readthedocs.org/en/latest/topics/downloader-middleware.html
 DOWNLOADER_MIDDLEWARES = {
-   'test_amazon.middlewares.CustomDownloaderMiddleware': 543,
-   'test_amazon.middlewares.ProxyDownloaderMiddleware': 544,
-   'test_amazon.middlewares.RuntimeDownloaderMiddleware': 901,
+   'crawl_amazon.middlewares.CustomDownloaderMiddleware': 543,
+   'crawl_amazon.middlewares.ProxyDownloaderMiddleware': 544,
+   'crawl_amazon.middlewares.RuntimeDownloaderMiddleware': 901,
 }
 
 # Enable or disable extensions
@@ -80,9 +80,9 @@ DOWNLOADER_MIDDLEWARES = {
 # Configure item pipelines
 # See http://scrapy.readthedocs.org/en/latest/topics/item-pipeline.html
 # ITEM_PIPELINES = {
-   # 'test_amazon.pipelines.TestAmazonPipeline': 300,
-   # 'test_amazon.pipelines.FilterPipeline': 301,
-   # 'test_amazon.pipelines.MongoItemsPipeline': 302
+   # 'crawl_amazon.pipelines.TestAmazonPipeline': 300,
+   # 'crawl_amazon.pipelines.FilterPipeline': 301,
+   # 'crawl_amazon.pipelines.MongoItemsPipeline': 302
 # }
 
 # Enable and configure the AutoThrottle extension (disabled by default)
