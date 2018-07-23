@@ -57,16 +57,14 @@ class MongoItemsPipeline(object):
             self.mongo_collection = item['mongo_collection']
             del item['mongo_collection']
 
+        # Add timestamp
         if 'created_at' not in item:
             item['created_at'] = datetime.now()
-
         item['updated_at'] = datetime.now()
 
         # Update variant for existed item
         if 'update_variant' in item:
             del item['update_variant']
-            del item['brand']
-            del item['categories']
 
             parent_id = item['parent_id']
             del item['parent_id']
@@ -78,7 +76,7 @@ class MongoItemsPipeline(object):
 
         # Create new item
         else:
-            print('insert item {}'.format(item))
+            print('Insert new item {}'.format(item))
 
             self.db[self.mongo_collection].insert_one(dict(item))
 

@@ -17,7 +17,7 @@ NEWSPIDER_MODULE = 'crawl_amazon.spiders'
 DOWNLOAD_TIMEOUT = 10
 
 RETRY_TIMES = 50
-RETRY_HTTP_CODES = [111, 403, 400, 404, 500, 502, 503, 504, 408]
+RETRY_HTTP_CODES = [111, 300, 302, 403, 400, 404, 500, 502, 503, 504, 408]
 
 LOG_STDOUT = True
 # LOG_FILE = 'logs/crawl.log'
@@ -29,6 +29,10 @@ USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64; rv:50.0) Gecko/20100101 Firefox/50
 MONGO_URI = 'mongodb://localhost:27017'
 MONGO_DATABASE = 'amazon'
 MONGO_ITEMS_COLLECTION = 'items'
+
+# Proxy API
+PROXIES_LIST_URL = 'http://localhost:5000/proxies?limit={}'
+PROXIES_UPDATE_RUNTIME_URL = 'http://localhost:5000/proxy/update?p={}&r={}'
 
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = False

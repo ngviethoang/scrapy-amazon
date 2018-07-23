@@ -5,14 +5,36 @@ import utils
 from bs4 import BeautifulSoup
 from scrapy.selector import Selector
 import re
+import copy
+from datetime import datetime
 
 
 class CategorySpider(scrapy.Spider):
     name = 'category'
 
+    custom_settings = {
+        'LOG_FILE': 'logs/crawl_category.log',
+        'ITEM_PIPELINES': {
+            'crawl_amazon.pipelines.FilterPipeline': 301,
+            'crawl_amazon.pipelines.MongoItemsPipeline': 302
+        },
+
+        # Settings for test
+        'DEV_MODE': False,
+        'MAX_CATEGORIES_PER_PAGE': 1,  # All: None
+        'IS_CRAWL_NEXT_PAGE': False,  # Crawl next page in results page
+        'ITEMS_PER_RESULT_PAGE': 10,  # Max items in results page
+    }
+
+    custom_stats = {
+        'items_total': 0,
+        'items_has_variants': 0,
+    }
+
     start_urls = [
         'https://www.amazon.com/s/ref=nb_sb_noss?url=search-alias%3Dbeauty&field-keywords='
 
+        # DEV
         # results page
         # 'https://www.amazon.com/b/ref=dp_csx_lgbl_n_luxury-beauty/ref=s9_acss_bw_cg_lxq4_3a1_w?_encoding=UTF8&node=13214802011&pf_rd_m=ATVPDKIKX0DER&pf_rd_s=merchandised-search-6&pf_rd_r=2H3GSJX74Z645JVWFRE9&pf_rd_t=101&pf_rd_p=0b316630-629c-4c77-a798-a8450ecdb8df&pf_rd_i=7175545011'
 
@@ -29,13 +51,9 @@ class CategorySpider(scrapy.Spider):
         # 'https://www.amazon.com/Gillette-Fusion-Manual-Refills-Razors/dp/B004B8AZH0/ref=lp_3778591_1_1_s_it?s=beauty&ie=UTF8&qid=1531975201&sr=1-1'
     ]
 
-    custom_settings = {
-        'LOG_FILE': 'logs/crawl_category.log',
-        'ITEM_PIPELINES': {
-            # 'crawl_amazon.pipelines.FilterPipeline': 301,
-            'crawl_amazon.pipelines.MongoItemsPipeline': 302
-        }
-    }
+    def __init__(self, *args, **kwargs):
+        super(CategorySpider, self).__init__(**kwargs)
+        self.start = datetime.now()
 
     def start_requests(self):
         for start_url in self.start_urls:
@@ -48,46 +66,49 @@ class CategorySpider(scrapy.Spider):
     # Get sub category pages or results page
     def parse_category(self, response):
         main_category = response.css('#searchDropdownBox option[selected]::text').extract_first()
+        # print(main_category)
 
         categories = response.css('a.bxc-grid-overlay__link')
 
         if len(categories) == 0:
-            print('Category page 0 items {}'.format(response.url))
+            print('Category page 0 categories {}'.format(response.url))
 
-            # categories = response.css('.bxc-grid__row:nth-child(4) a')
+        for i, category in enumerate(categories):
+            if self.custom_settings['DEV_MODE'] \
+                    and self.custom_settings['MAX_CATEGORIES_PER_PAGE'] is not None \
+                    and i == self.custom_settings['MAX_CATEGORIES_PER_PAGE']:
+                break
 
-        for category in categories:
-            name = ''.join(category.css('a ::text').extract())
-            name = name.strip()
+            category_name = ''.join(category.css('a ::text').extract())
+            category_name = category_name.strip()
 
-            url = category.css('a::attr(href)').extract_first()
-            url = response.urljoin(url)
+            category_url = category.css('a::attr(href)').extract_first()
+            category_url = response.urljoin(category_url)
+            # print('Category {} {}'.format(category_name, category_url))
 
-            meta = {
-                'data': {
-                    'categories': [main_category]
+            meta = copy.deepcopy(response.meta)
+
+            # First request
+            if 'data' not in meta or 'categories' not in meta['data']:
+                meta['data'] = {
+                    'categories': [main_category, category_name]
                 }
-            }
 
-            # print('Category {} {}'.format(name, url))
-
-            meta['data']['categories'].append(name)
-
-            # First & second category requests
-            if 'data' not in response.meta or 'categories' not in response.meta['data']:
-
-                yield scrapy.Request(url=url,
+                yield scrapy.Request(url=category_url,
                                      meta=meta,
                                      callback=self.parse_category)
+            # Second request
             else:
-                yield scrapy.Request(url=url,
+                meta['data']['categories'].append(category_name)
+
+                yield scrapy.Request(url=category_url,
                                      meta=meta,
                                      callback=self.parse_prime_url)
 
     # Get url for prime items only from sub category's results page
     def parse_prime_url(self, response):
         prime_input = response.xpath(
-            "//div[@id='leftNav']//i[contains(@class, 'a-icon-prime')]//..//..//..//../@data-s-ref-selected")\
+            "//div[@id='leftNav']//i[contains(@class, 'a-icon-prime')]//..//..//..//../@data-s-ref-selected") \
             .extract_first()
 
         prime_url = json.loads(prime_input)['url']
@@ -106,17 +127,28 @@ class CategorySpider(scrapy.Spider):
         item_urls = response.css('#resultsCol .s-access-detail-page::attr(href)').extract()
         print('{} items {}'.format(len(item_urls), url))
 
-        # Crawl next page
-        next_page = response.css('#pagnNextLink::attr(href)').extract_first()
-        if next_page is not None:
-            next_page = response.urljoin(next_page)
+        self.custom_stats['items_total'] += len(item_urls)
 
-            yield scrapy.Request(url=next_page,
-                                 meta=response.meta,
-                                 callback=self.parse_results_page)
+        # Crawl next page
+        if self.custom_settings['DEV_MODE'] \
+                and self.custom_settings['IS_CRAWL_NEXT_PAGE']:
+            next_page = response.css('#pagnNextLink::attr(href)').extract_first()
+            if next_page is not None:
+                next_page = response.urljoin(next_page)
+
+                yield scrapy.Request(url=next_page,
+                                     meta=response.meta,
+                                     callback=self.parse_results_page)
 
         # Crawl all items in a page
-        for item_url in item_urls:
+        for i, item_url in enumerate(item_urls):
+            if self.custom_settings['DEV_MODE'] \
+                    and self.custom_settings['ITEMS_PER_RESULT_PAGE'] is not None \
+                    and i == self.custom_settings['ITEMS_PER_RESULT_PAGE']:
+                break
+
+            item_url = response.urljoin(item_url)
+
             yield scrapy.Request(url=item_url,
                                  meta=response.meta,
                                  callback=self.parse_item_page)
@@ -126,69 +158,98 @@ class CategorySpider(scrapy.Spider):
         # Get the first item
         item = self.get_item(response)
 
+        parent_id = item['ASIN']
+
         item['variants'] = []
 
         # Add item's category info
         item['categories'] = response.meta['data']['categories']
+        # item['categories'] = None
 
         # parse twister to get its variants
         variant_urls = response.css('#twister_feature_div .twisterShelf_swatch::attr(data-dp-url)').extract()
 
-        item['variants_len'] = len(variant_urls)
-        
+        item['variants_len'] = len(variant_urls) if len(variant_urls) > 0 else 1
+
         # Create new item (only insert few keys)
-        new_item = {k: item[k] for k in ['ASIN', 'brand', 'categories']}
+        new_item = {k: item[k] if k in item else None
+                    for k in ['url', 'variants', 'variants_len', 'ASIN', 'brand', 'categories']}
 
         yield new_item
 
         # Update this item as its variant
-        variant_item = item
+        variant_item = copy.deepcopy(item)
+
+        if len(variant_urls) > 0:
+            variant_item['options'] = self.get_variant_options(response)
 
         del variant_item['variants']
         del variant_item['variants_len']
+        del variant_item['brand']
+        del variant_item['categories']
 
         variant_item['update_variant'] = True
-        variant_item['parent_id'] = item['ASIN']
+        variant_item['parent_id'] = parent_id
 
         yield variant_item
 
         # if the item has variants
-        for variant_url in variant_urls:
-            # print('Variant {}'.format(twister_item_url))
+        if len(variant_urls) > 0:
+            self.custom_stats['items_has_variants'] += 1
 
-            # Update other variant for item
-            if variant_url != '':
-                variant_url = 'https://www.amazon.com' + variant_url
+            meta = copy.deepcopy(response.meta)
 
-                if 'data' not in response.meta:
-                    response.meta['data'] = dict()
+            if 'data' not in meta:
+                meta['data'] = dict()
+            meta['data']['parent_id'] = parent_id
 
-                response.meta['data']['parent_id'] = item['ASIN']
+            for variant_url in variant_urls:
+                # print('Variant {}'.format(twister_item_url))
 
-                yield scrapy.Request(url=variant_url,
-                                     meta=response.meta,
-                                     callback=self.parse_variant)
+                # Update other variant for item
+                if variant_url != '':
+                    variant_url = 'https://www.amazon.com' + variant_url
+
+                    yield scrapy.Request(url=variant_url,
+                                         meta=meta,
+                                         callback=self.parse_variant)
 
     def parse_variant(self, response):
-        twister_data = response.xpath("//script[contains(., 'twister-js-init-dpx-data')]/text()").extract()
-        if len(twister_data) > 0:
-            data = twister_data[0].split('dataToReturn')[1]
-            data = re.sub(r"\n|=|;|return|\s+", '', data)
-            data = data.replace(',]', ']')
+        item = self.get_item(response)
+        item['options'] = self.get_variant_options(response)
+
+        del item['brand']
+
+        item['update_variant'] = True
+        item['parent_id'] = response.meta['data']['parent_id']
+
+        yield item
+
+    def get_variant_options(self, response):
+        twister_data = response.xpath(
+            """//script[contains(., "P.register('twister-js-init-dpx-data'")]/text()""")\
+            .extract_first()
+
+        if twister_data is not None:
+            # Get JS object
+            data = twister_data.split('dataToReturn')[1]
+            data = re.sub('\n|=|;|return', '', data)
+            data = re.sub(',(\s+)?]', ']', data)  # js array error
             data = json.loads(data)
+            # print(data)
 
-            data = data['displayTypeProperties']
+            # Get variant's values
+            variation_display_labels = data['variationDisplayLabels']
+            selected_variation_values = data['selectedVariationValues']
+            variation_values = data['variationValues']
 
-            # current_asin = data['currentAsin']
-            #
-            # option_name = data['variationDisplayLabels'][data['variationDisplayLabels']]
+            # options: [{label: value}, ...]
+            options = [{variation_display_labels[k]: variation_values[k][selected_variation_values[k]]}
+                       for k in selected_variation_values]
 
-            item = self.get_item(response)
+            return options
 
-            item['update_variant'] = True
-            item['parent_id'] = response.meta['data']['parent_id']
-
-            yield item
+        return None
 
     # Get item details from response
     def get_item(self, response):
@@ -265,14 +326,14 @@ class CategorySpider(scrapy.Spider):
 
         return {
             'ASIN': ASIN,
+            'url': response.url,
+            'title': title,
             'brand': {
                 'name': brand,
                 'url': brand_url
             },
-            'title': title,
             'alt_images': alt_images,
             'details': details_output,
-            'url': response.request.url,
             'price': price,
             'description': description,
             'plus_description': {
@@ -282,3 +343,9 @@ class CategorySpider(scrapy.Spider):
             'features': features,
             'videos': videos,
         }
+
+    def close(self, spider, reason):
+        runtime = datetime.now() - self.start
+        print('Total runtime: {}'.format(runtime))
+
+        print(self.custom_stats)

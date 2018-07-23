@@ -13,6 +13,7 @@ from scrapy.downloadermiddlewares.retry import RetryMiddleware
 from urllib import urlencode
 from w3lib.http import basic_auth_header
 import requests
+from settings import PROXIES_LIST_URL, PROXIES_UPDATE_RUNTIME_URL
 
 
 class CustomDownloaderMiddleware(RetryMiddleware):
@@ -129,24 +130,37 @@ class CustomDownloaderMiddleware(RetryMiddleware):
                        callback=first_req.callback)
 
 
+# Get proxies from api
+def get_proxies(proxies_number=100):
+    res = requests.get(url=PROXIES_LIST_URL.format(proxies_number))
+    proxies = json.loads(res.content)
+
+    return proxies
+
+
 class ProxyDownloaderMiddleware(object):
+
+    proxy_requests = 0
 
     def __init__(self, proxies):
         self.proxies = proxies
 
     @classmethod
     def from_crawler(cls, crawler):
-        # Get proxies from api
-        proxies_number = 100
-
-        res = requests.get(url='http://localhost:5000/proxies?limit={}'.format(proxies_number))
-        proxies = json.loads(res.content)
+        proxies = get_proxies()
 
         return cls(
             proxies=proxies
         )
 
     def process_request(self, request, spider):
+        # Reload proxies list
+        # if self.proxy_requests == 100:
+        #     spider.logger.info('Reload proxies')
+        #
+        #     self.proxy_requests = 0
+        #     self.proxies = get_proxies()
+
         # always change proxy
         # select randomly a proxy's index in proxies array
         index = random.randrange(len(self.proxies))
@@ -158,8 +172,12 @@ class ProxyDownloaderMiddleware(object):
         if 'proxy' in request.meta \
                 and 'type' in request.meta and request.meta['type'] in ['solve_captcha']:
             del request.meta['proxy']
+        # request with proxy
+        else:
+            self.proxy_requests += 1
 
-        spider.logger.info('Request: {} | meta: {}'.format(request.url, request.meta))
+        if 'DEV_MODE' in spider.custom_settings and spider.custom_settings['DEV_MODE']:
+            spider.logger.info('Request: {} | meta: {}'.format(request.url, request.meta))
 
         return None
 
@@ -183,6 +201,6 @@ class RuntimeDownloaderMiddleware(object):
             run_time = run_time.seconds
 
             # update proxy's run time to database
-            requests.get('http://localhost:5000/proxy/update?p={}&r={}'.format(proxy, run_time))
+            requests.get(PROXIES_UPDATE_RUNTIME_URL.format(proxy, run_time))
 
         return response
